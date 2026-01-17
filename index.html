@@ -3,6 +3,7 @@
 
 
 
+
 <!DOCTYPE html>
 <html lang="de">
 <head>
@@ -334,15 +335,25 @@ function nextLevel(){
 }
 
 
-canvas.addEventListener("click", ()=>{
+function handleConfirm(){
   if(GAME.state === "bossPause"){
     GAME.state = "play";
     nextLevel();
-  } else if(GAME.gameOver){
+  } 
+  else if(GAME.gameOver){
     restartGame();
   }
+}
 
+// 🖥️ PC
+canvas.addEventListener("click", handleConfirm);
+
+// 📱 Mobile
+canvas.addEventListener("touchstart", e=>{
+  e.preventDefault();
+  handleConfirm();
 });
+
 
 function restartGame(){
   GAME.state = "play";
