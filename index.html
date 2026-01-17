@@ -3,11 +3,17 @@
 
 
 
+
 <!DOCTYPE html>
 <html lang="de">
 <head>
 <meta charset="UTF-8">
+
+<!-- 📱 WICHTIG FÜR HANDY -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+
 <title>Pixel Helden – Refactored</title>
+
 <style>
 body{
   margin:0;
@@ -17,25 +23,34 @@ body{
   align-items:center;
   height:100vh;
 }
+
+/* 📱 Touch sauber blockieren */
 canvas{
   background:#3a5f3a;
   border:3px solid #555;
   image-rendering:pixelated;
   outline:none;
+  touch-action:none;
 }
 </style>
 </head>
+
 <body>
 
 <canvas id="game" width="480" height="840" tabindex="1"></canvas>
 
 <script>
 /* ===================== SETUP ===================== */
+const IS_MOBILE =
+  /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 canvas.focus();
 
 const keys = {};
+let touchPos = null;
+
 
 addEventListener("keydown", e=>{
   const key = e.key.toLowerCase();
@@ -56,6 +71,33 @@ if(key === "l"){
   });
 
 addEventListener("keyup", e=> keys[e.key.toLowerCase()] = false);
+
+/* ===================== TOUCH EVENTS (MOBILE) ===================== */
+canvas.addEventListener("touchstart", e=>{
+  e.preventDefault();
+  const t = e.touches[0];
+  const rect = canvas.getBoundingClientRect();
+
+  touchPos = {
+    x: t.clientX - rect.left,
+    y: t.clientY - rect.top
+  };
+});
+
+canvas.addEventListener("touchmove", e=>{
+  e.preventDefault();
+  const t = e.touches[0];
+  const rect = canvas.getBoundingClientRect();
+
+  touchPos = {
+    x: t.clientX - rect.left,
+    y: t.clientY - rect.top
+  };
+});
+
+canvas.addEventListener("touchend", ()=>{
+  touchPos = null;
+});
 
 /* ===================== GAME STATE ===================== */
 const GAME = {
@@ -500,16 +542,61 @@ function update(){
   if(GAME.hitCooldown>0) GAME.hitCooldown--;
 
   /* --- Knight Movement --- */
-  const k = HEROES.knight;
-  const sp = 2.2;
+  /* --- Knight Movement --- */
+const k = HEROES.knight;
+const sp = 2.2;
 
+// 🖥️ PC – Tastatur
+if(!IS_MOBILE){
   if(keys.w){ k.y-=sp; k.dir={x:0,y:-1}; }
   if(keys.s){ k.y+=sp; k.dir={x:0,y:1}; }
   if(keys.a){ k.x-=sp; k.dir={x:-1,y:0}; }
   if(keys.d){ k.x+=sp; k.dir={x:1,y:0}; }
+}
+
+// 📱 Mobile – Touch Follow
+if(IS_MOBILE && touchPos){
+  const rect = canvas.getBoundingClientRect();
+
+  const dx = touchPos.x - rect.left - k.x;
+  const dy = touchPos.y - rect.top  - k.y;
+  const dist = Math.hypot(dx, dy);
+
+  if(dist > 3){
+    const speed = 2.6;
+    k.x += dx / dist * speed;
+    k.y += dy / dist * speed;
+    k.dir = { x: dx / dist, y: dy / dist };
+  }
+}
+
 
   k.x = Math.max(8, Math.min(472, k.x));
   k.y = Math.max(8, Math.min(832, k.y));
+
+/* --- Touch Follow Steuerung (Mobile) --- */
+if(touchPos){
+  const rect = canvas.getBoundingClientRect();
+
+  const tx = touchPos.x - rect.left;
+  const ty = touchPos.y - rect.top;
+
+  const dx = tx - k.x;
+  const dy = ty - k.y;
+  const dist = Math.hypot(dx, dy);
+
+  if(dist > 2){
+    const speed = 2.5; // Gefühl einstellen
+    k.x += dx / dist * speed;
+    k.y += dy / dist * speed;
+
+    k.dir = {
+      x: dx / dist,
+      y: dy / dist
+    };
+  }
+}
+
 
   /* --- Spawning --- */
   // 👾 Normale Gegner spawnen
@@ -1289,3 +1376,5 @@ ctx.fillText("Score "+GAME.score,360,24);
 </script>
 </body>
 </html>
+
+
