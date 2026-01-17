@@ -1,9 +1,4 @@
 
-
-
-
-
-
 <!DOCTYPE html>
 <html lang="de">
 <head>
@@ -21,8 +16,10 @@ body{
   display:flex;
   justify-content:center;
   align-items:center;
-  height:100vh;
+  min-height:100vh;
+  overflow:hidden;
 }
+
 
 /* 📱 Touch sauber blockieren */
 canvas{
@@ -31,7 +28,14 @@ canvas{
   image-rendering:pixelated;
   outline:none;
   touch-action:none;
+
+  /* 📱 WICHTIG: Canvas skaliert sich auf Handy */
+  max-width: 100vw;
+  max-height: 100vh;
+  width: auto;
+  height: auto;
 }
+
 </style>
 </head>
 
