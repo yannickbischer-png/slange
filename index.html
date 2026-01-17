@@ -3,7 +3,6 @@
 
 
 
-
 <!DOCTYPE html>
 <html lang="de">
 <head>
@@ -555,15 +554,14 @@ if(!IS_MOBILE){
 }
 
 // 📱 Mobile – feste Laufgeschwindigkeit wie PC
-if(IS_MOBILE && touchPos){
-  const rect = canvas.getBoundingClientRect();
+if (IS_MOBILE && touchPos) {
 
-  const dx = touchPos.x - rect.left - k.x;
-  const dy = touchPos.y - rect.top  - k.y;
+  const dx = touchPos.x - k.x;
+  const dy = touchPos.y - k.y;
   const dist = Math.hypot(dx, dy);
 
-  if(dist > 4){ // kleine Deadzone
-    const speed = sp; // 👈 exakt PC-Geschwindigkeit
+  if (dist > 6) { // kleine Deadzone
+    const speed = sp; // exakt wie PC
 
     k.x += (dx / dist) * speed;
     k.y += (dy / dist) * speed;
@@ -574,6 +572,7 @@ if(IS_MOBILE && touchPos){
     };
   }
 }
+
 
 
   k.x = Math.max(8, Math.min(472, k.x));
