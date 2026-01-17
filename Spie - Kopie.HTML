@@ -1,0 +1,1291 @@
+
+
+
+
+
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Pixel Helden – Refactored</title>
+<style>
+body{
+  margin:0;
+  background:#111;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  height:100vh;
+}
+canvas{
+  background:#3a5f3a;
+  border:3px solid #555;
+  image-rendering:pixelated;
+  outline:none;
+}
+</style>
+</head>
+<body>
+
+<canvas id="game" width="480" height="840" tabindex="1"></canvas>
+
+<script>
+/* ===================== SETUP ===================== */
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+canvas.focus();
+
+const keys = {};
+
+addEventListener("keydown", e=>{
+  const key = e.key.toLowerCase();
+  keys[key] = true;
+
+  if(key >= "1" && key <= "9"){
+    setLevel(Number(key));
+  }
+
+
+// 🧪 DEBUG: +1 Level für alle Helden
+if(key === "l"){
+  debugLevelUpAll();
+  console.log("DEBUG: +1 LEVEL für alle Helden");
+}
+
+
+  });
+
+addEventListener("keyup", e=> keys[e.key.toLowerCase()] = false);
+
+/* ===================== GAME STATE ===================== */
+const GAME = {
+  level: 1,
+  score: 0,
+  hp: 3,
+  maxHp: 3,        
+  maxHpBoosted: false,
+  spawned: 0,
+  bossAlive: false,
+  hitCooldown: 0,
+  gameOver: false,
+  state: "play", //
+  bossKilledHandled: false,
+  endless: false,
+
+
+};
+
+const HIT_IFRAMES = 50;
+const BLACK_HOLE_DPS = 20;
+const BLACK_HOLE_DAMAGE_PER_FRAME = BLACK_HOLE_DPS / 60;
+
+
+/* ===================== HEROES ===================== */
+const HEROES = {
+  knight: {
+    x:240, y:420,
+    size:16,
+    dir:{x:0,y:-1},
+    kills:0,
+    level:1
+  },
+ archer: {
+  x:240, y:460,
+  cooldown:0,
+  unlocked:false,
+  level:1,
+  shotCount:0,
+  kills:0
+},
+
+mage: {
+  x:240, y:500,
+  cooldown:0,
+  unlocked:false,
+  level:1,
+  kills:0
+},
+
+guardian: {
+  x:240,
+  y:540,
+  cooldown:0,
+  unlocked:false,
+  level:1,
+  blocks:0 // 🛡️ Block-XP
+}
+
+
+  };
+
+const trail = [];
+
+/* ===================== LEVEL SYSTEM ===================== */
+function calcLevel(kills){
+  return kills >= 160 ? 5 :
+         kills >= 120 ? 4 :
+         kills >= 60  ? 3 :
+         kills >= 30  ? 2 : 1;
+}
+
+function calcGuardianLevel(blocks){
+  return blocks >= 14 ? 5 :
+         blocks >= 9  ? 4 :
+         blocks >= 5  ? 3 :
+         blocks >= 2  ? 2 : 1;
+}
+
+function debugGuardianLevelUp(){
+  const currentLevel = HEROES.guardian.level;
+
+  while(calcGuardianLevel(HEROES.guardian.blocks) === currentLevel){
+    HEROES.guardian.blocks++;
+  }
+
+  HEROES.guardian.level =
+    calcGuardianLevel(HEROES.guardian.blocks);
+}
+
+
+function debugLevelUp(hero){
+  const currentLevel = hero.level;
+
+  while(calcLevel(hero.kills) === currentLevel){
+    hero.kills++;
+  }
+
+  hero.level = calcLevel(hero.kills);
+}
+
+function debugLevelUpAll(){
+  debugLevelUp(HEROES.knight);
+
+  if(HEROES.archer.unlocked){
+    debugLevelUp(HEROES.archer);
+  }
+
+  if(HEROES.mage.unlocked){
+    debugLevelUp(HEROES.mage);
+  }
+
+  if(HEROES.guardian.unlocked){
+    debugGuardianLevelUp();
+  }
+}
+
+
+
+
+/* ===================== SWORD ===================== */
+const SWORD = {
+  range:58,
+  baseCooldown:60,
+  cooldown:0,
+  angle:Math.PI/3,
+  active:0,
+  maxActive:40,
+  swingDir:1,
+  hitEnemies: new Set()
+};
+
+/* ===================== ENTITIES ===================== */
+let enemies = [];
+let arrows = [];
+let mageShots = [];
+let enemyBullets = [];
+let explosions = [];
+let blackHoles = [];
+let damageTexts = [];
+let shields = [];
+
+
+/* ===================== LEVEL CONTROL ===================== */
+function onBossKilled(){
+
+  // 🧠 Wie viele Bosse leben NOCH?
+  const bossesLeft = enemies.filter(e => e.type.startsWith("boss")).length;
+
+  // ❗ Wenn noch mehr als 1 Boss existiert → noch nicht fertig
+  if (bossesLeft > 1) return;
+
+  // 🔒 Nur einmal ausführen
+  if (GAME.bossKilledHandled) return;
+
+  GAME.bossKilledHandled = true;
+  GAME.bossAlive = false;
+
+  // ❤️ Belohnung
+  GAME.hp = Math.min(GAME.hp + 1, GAME.maxHp);
+
+  // 🧬 Einmaliger Max-HP-Boost
+  if (GAME.level === 3 && !GAME.maxHpBoosted) {
+    GAME.maxHp++;
+    GAME.hp++;
+    GAME.maxHpBoosted = true;
+  }
+
+  // ⏸️ Level geschafft
+  GAME.state = "bossPause";
+}
+
+
+function bossKillLimit(){
+  return GAME.level === 1 ? 30 : 60;
+}
+
+
+function setLevel(lvl){
+   
+  if(lvl === 1){
+  // ⚔️ Knight Reset
+  HEROES.knight.kills = 0;
+  HEROES.knight.level = 1;
+
+  // 🏹 Archer Reset
+  HEROES.archer.kills = 0;
+  HEROES.archer.level = 1;
+  HEROES.archer.shotCount = 0;
+
+  // 🔮 Mage Reset (DAS hat gefehlt)
+  HEROES.mage.kills = 0;
+  HEROES.mage.level = 1;
+  HEROES.mage.cooldown = 0;
+
+  GAME.score = 0;
+}
+
+
+
+ 
+  GAME.level = lvl;
+  GAME.hp = Math.min(GAME.hp, GAME.maxHp);
+  GAME.spawned = 0;
+  GAME.bossAlive = false;
+  GAME.hitCooldown = 0;
+  GAME.gameOver = false;
+  GAME.bossKilledHandled = false;
+
+  enemies = [];
+  arrows = [];
+  mageShots = [];
+  enemyBullets = [];
+  explosions = [];
+  trail.length = 0;
+
+  HEROES.archer.unlocked = lvl>=2;
+  HEROES.mage.unlocked   = lvl>=3;
+  HEROES.guardian.unlocked = lvl>=4;
+
+}
+
+function nextLevel(){
+
+  // 🔢 Maximal-Level vor Endlos
+  const MAX_LEVEL = 9;
+
+  if (GAME.level < MAX_LEVEL) {
+    setLevel(GAME.level + 1);
+  } else {
+    // ♾️ Endlos-Modus
+    setLevel(GAME.level + 1);
+    GAME.endless = true;
+  }
+}
+
+
+canvas.addEventListener("click", ()=>{
+  if(GAME.state === "bossPause"){
+    GAME.state = "play";
+    nextLevel();
+  } else if(GAME.gameOver){
+    restartGame();
+  }
+
+});
+
+function restartGame(){
+  GAME.state = "play";
+  GAME.gameOver = false;
+  GAME.hp = GAME.maxHp;
+  GAME.hitCooldown = 0;
+
+  // 🧍 Ritter Reset
+  HEROES.knight.x = 240;
+  HEROES.knight.y = 420;
+  HEROES.knight.dir = {x:0,y:-1};
+
+  // 🛡️ Schildträger KOMPLETT resetten
+  HEROES.guardian.cooldown = 0;
+  HEROES.guardian.blocks = 0;
+  HEROES.guardian.level = 1;
+
+  // ❌ aktive Schilde entfernen
+  shields.length = 0;
+
+  // Followers / Trail reset
+  trail.length = 0;
+
+  // Spiel zurück auf Ebene 1
+  setLevel(1);
+}
+
+
+/* ===================== SPAWNING ===================== */
+function spawnEnemy(){
+  const side = Math.floor(Math.random()*4);
+  let x,y;
+
+  if(side===0){ x=Math.random()*480; y=-30; }
+  if(side===1){ x=Math.random()*480; y=870; }
+  if(side===2){ x=-30; y=Math.random()*840; }
+  if(side===3){ x=510; y=Math.random()*840; }
+
+  let type = "normal";
+
+  if(GAME.level === 2 && Math.random() < 0.6) type = "fast";
+  if(GAME.level >= 3 && Math.random() < 0.4) type = "tank";
+  if(GAME.level >= 4 && Math.random() < 0.35) type = "shooter";
+
+  if(type === "fast"){
+    enemies.push({x,y,size:12,speed:1.8,hp:40,type});
+  }
+  else if(type === "tank"){
+    enemies.push({x,y,size:22,speed:0.45,hp:120,type});
+  }
+  else if(type === "shooter"){
+    enemies.push({
+      x,y,
+      size:14,
+      speed:0.6,
+      hp:60,
+      type,
+      shootCooldown:120
+    });
+  }
+  else{
+    enemies.push({x,y,size:14,speed:0.9,hp:60,type});
+  }
+}
+
+function spawnBoss(){
+  GAME.bossAlive = true;
+
+    // ♾️ Ab Ebene 5: skalierender Boss / Endlos-Modus
+  if (GAME.level >= 5) {
+    enemies.push({
+      x:240,
+      y:-60,
+      size:45,
+      speed:0.9 + GAME.level * 0.03,
+      hp:600 + GAME.level * 180,
+      type:"boss2",
+      zigzag:0,
+      shootCooldown:Math.max(25, 70 - GAME.level * 3),
+      spiralAngle:0
+    });
+    return;
+  }
+
+
+  // 🧠 Ebene 4 = Zwillingsboss (Boss 2 x2)
+  if(GAME.level === 4){
+
+    // linker Boss
+    enemies.push({
+      x:120,
+      y:-60,
+      size:40,
+      speed:0.7,
+      hp:800,
+      type:"boss2",
+      zigzag:0,
+      shootCooldown:60,
+      spiralAngle:0
+    });
+
+    // rechter Boss
+    enemies.push({
+      x:360,
+      y:-60,
+      size:40,
+      speed:0.7,
+      hp:800,
+      type:"boss2",
+      zigzag:0,
+      shootCooldown:60,
+      spiralAngle:0
+    });
+
+    return; // ⛔ wichtig: keine anderen Bosse spawnen
+  }
+
+  // 🔁 alte Bosse bleiben gleich
+  let type = "boss1";
+  if(GAME.level === 2) type = "boss2";
+  if(GAME.level === 3) type = "boss3";
+
+  enemies.push({
+    x:240,
+    y:-60,
+    size:40,
+    speed:0.7,
+    hp:type==="boss3"?650:type==="boss2"?500:350,
+    type,
+    zigzag:0,
+    shootCooldown:60,
+    spiralAngle:0
+  });
+}
+
+
+
+/* ===================== UPDATE ===================== */
+function update(){
+
+  // 🔢 Damage-Zahlen updaten
+  damageTexts = damageTexts.filter(d => {
+    d.y -= 0.3;   // bewegt sich leicht nach oben
+    d.life--;     // Lebenszeit läuft runter
+    return d.life > 0;
+  });
+
+  // 🔥 Effekte laufen IMMER weiter
+  explosions = explosions.filter(e=>{
+    e.life--;
+    return e.life > 0;
+  });
+
+  blackHoles = blackHoles.filter(bh => {
+  bh.t--;
+
+  // 🕳️ Black Hole – 20 Schaden pro Sekunde
+  for(let i = enemies.length - 1; i >= 0; i--){
+    const e = enemies[i];
+    const dist = Math.hypot(e.x - bh.x, e.y - bh.y);
+
+
+    if(dist < bh.r){
+      e.hp -= BLACK_HOLE_DAMAGE_PER_FRAME;
+
+      // kleine, dezente Damage-Zahlen
+      if(Math.random() < 0.02){
+        damageTexts.push({
+          x: e.x,
+          y: e.y,
+          value: Math.round(BLACK_HOLE_DPS),
+          life: 20,
+          maxLife: 20
+        });
+      }
+
+      if(e.hp <= 0){
+        GAME.score++;
+
+        HEROES.mage.kills++;
+        HEROES.mage.level = calcLevel(HEROES.mage.kills);
+
+        enemies.splice(i, 1);
+      }
+    }
+  }
+
+  return bh.t > 0;
+});
+
+  // ⛔ Gameplay pausieren
+  if(GAME.gameOver) return;
+  if(GAME.state === "bossPause") return;
+
+
+  if(GAME.hitCooldown>0) GAME.hitCooldown--;
+
+  /* --- Knight Movement --- */
+  const k = HEROES.knight;
+  const sp = 2.2;
+
+  if(keys.w){ k.y-=sp; k.dir={x:0,y:-1}; }
+  if(keys.s){ k.y+=sp; k.dir={x:0,y:1}; }
+  if(keys.a){ k.x-=sp; k.dir={x:-1,y:0}; }
+  if(keys.d){ k.x+=sp; k.dir={x:1,y:0}; }
+
+  k.x = Math.max(8, Math.min(472, k.x));
+  k.y = Math.max(8, Math.min(832, k.y));
+
+  /* --- Spawning --- */
+  // 👾 Normale Gegner spawnen
+if(
+  !GAME.bossAlive &&
+  GAME.spawned < bossKillLimit() &&
+  Math.random() < 0.03
+){
+  spawnEnemy();
+  GAME.spawned++;
+}
+
+// 👑 Boss erst, wenn ALLE normalen Gegner tot sind
+if(
+  !GAME.bossAlive &&
+  GAME.spawned >= bossKillLimit() &&
+  enemies.length === 0
+){
+  spawnBoss();
+
+}
+
+
+  /* --- Trail / Followers --- */
+  trail.unshift({x:k.x, y:k.y});
+  if(trail.length>40) trail.pop();
+
+  if(HEROES.archer.unlocked && trail[14]) Object.assign(HEROES.archer, trail[14]);
+  if(HEROES.mage.unlocked   && trail[26]) Object.assign(HEROES.mage,   trail[26]);
+  if(HEROES.guardian.unlocked && trail[36]) {
+  HEROES.guardian.x = trail[36].x;
+  HEROES.guardian.y = trail[36].y;
+}  
+
+/* ===================== GUARDIAN SHIELD ===================== */
+if(HEROES.guardian.unlocked){
+
+  const lvl = HEROES.guardian.level;
+
+  const cooldown =
+    lvl === 1 ? 420 :
+    lvl === 2 ? 360 :
+    lvl === 3 ? 300 :
+    lvl === 4 ? 240 : 240;
+
+  // ⏳ Cooldown nur runterzählen, wenn KEIN Schild aktiv ist
+  if(shields.length === 0 && HEROES.guardian.cooldown > 0){
+    HEROES.guardian.cooldown--;
+  }
+
+  // 🛡️ Neues Schild NUR, wenn:
+  // 1️⃣ kein Schild existiert
+  // 2️⃣ Cooldown abgelaufen ist
+  if(shields.length === 0 && HEROES.guardian.cooldown <= 0){
+
+    shields.push({
+      type: lvl < 3 ? "line" : "circle",
+
+      r:
+        lvl < 3 ? 0 :
+        lvl === 3 ? 22 :
+        lvl === 4 ? 30 : 36,
+
+      blocks:
+        lvl >= 4 ? 2 : 1,
+
+      reflect: lvl >= 5,
+
+      life:
+        lvl === 1 ? 90 :
+        lvl === 2 ? 110 :
+        lvl === 3 ? 140 :
+        lvl === 4 ? 300 : 200
+    });
+
+    // ⏱️ Cooldown startet ERST NACH Spawn
+    HEROES.guardian.cooldown = cooldown;
+  }
+}
+
+// 🛡️ SHIELD-LIFE UPDATE (GANZ WICHTIG)
+shields = shields.filter(s => {
+  s.life--;
+  return s.life > 0;
+});
+
+
+
+  /* --- Archer --- */
+
+if(HEROES.archer.unlocked){
+  HEROES.archer.cooldown--;
+
+  if(HEROES.archer.cooldown<=0 && enemies.length){
+    const lvl = HEROES.archer.level;
+    HEROES.archer.shotCount++;
+
+    const isHeavy = lvl >= 5 && HEROES.archer.shotCount % 5 === 0;
+
+    let damage = 30;
+    let speed  = 5;
+    let size   = 4;
+    let pierce = false;
+
+    // Level 2 – mehr Schaden
+    if(lvl >= 2) damage += 15;
+
+    // Level 3 – schneller schießen
+    if(lvl >= 3) HEROES.archer.cooldown -= 10;
+
+    // Level 4 – stabiler / schneller Pfeil
+    if(lvl >= 4) speed += 1;
+
+    // Level 5 – Heavy Shot
+    if(isHeavy){
+      damage = 120;
+      speed  = 4;
+      size   = 10;
+      pierce = true;
+    }
+
+    const t = enemies[0];
+    const dx = t.x - HEROES.archer.x;
+    const dy = t.y - HEROES.archer.y;
+    const d  = Math.hypot(dx,dy) || 1;
+
+    arrows.push({
+  x: HEROES.archer.x,
+  y: HEROES.archer.y,
+  vx: dx/d * speed,
+  vy: dy/d * speed,
+  damage,
+  size,
+  pierce,
+  heavy: isHeavy,
+  hitEnemies: new Set() // 🧠 merkt sich Treffer
+});
+
+
+    HEROES.archer.cooldown = Math.max(20, 55 - lvl * 5);
+  }
+}
+
+
+ arrows = arrows.filter(a=>{
+  a.x += a.vx;
+  a.y += a.vy;
+
+  for(let i = 0; i < enemies.length; i++){
+    const e = enemies[i];
+
+    if(Math.hypot(a.x - e.x, a.y - e.y) < e.size){
+      if(a.hitEnemies.has(e)) return true; // schon getroffen → ignorieren
+a.hitEnemies.add(e);
+
+// 💥 Schaden
+e.hp -= a.damage;
+
+damageTexts.push({
+  x: e.x,
+  y: e.y,
+  value: Math.round(a.damage),
+  life: 30,
+  maxLife: 30
+});
+
+
+      if(e.hp <= 0){
+        GAME.score++;
+
+        HEROES.archer.kills++;
+        HEROES.archer.level = calcLevel(HEROES.archer.kills);
+
+
+        if(e.type.startsWith("boss")){
+  onBossKilled();
+}
+
+
+        enemies.splice(i, 1);
+      }
+
+      // 🔴 KLARE ENTSCHEIDUNG
+      if(a.pierce){
+        return true;   // Heavy Shot fliegt weiter
+      }else{
+        return false;  // normaler Pfeil stoppt hier
+      }
+    }
+  }
+
+  return true; // kein Treffer → weiterfliegen
+});
+
+  /* --- Mage --- */
+  if(HEROES.mage.unlocked){
+    HEROES.mage.cooldown--;
+    if(HEROES.mage.cooldown<=0 && enemies.length){
+      const t=enemies[0];
+      const dx=t.x-HEROES.mage.x, dy=t.y-HEROES.mage.y;
+      const d=Math.hypot(dx,dy)||1;
+            HEROES.mage.cooldown=90;
+   const lvl = HEROES.mage.level;
+
+let speed = 3;
+let explosionRadius = 60;
+let blackHole = false;
+
+// Level 4 – größere Explosion
+if(lvl >= 4){
+  explosionRadius = 90;
+}
+
+// Level 5 – Black Hole
+if(lvl >= 5){
+  blackHole = true;
+}
+
+mageShots.push({
+  x:HEROES.mage.x,
+  y:HEROES.mage.y,
+  vx:dx/d*speed,
+  vy:dy/d*speed,
+  r: explosionRadius,
+  blackHole
+});
+
+    }
+  }
+
+ mageShots = mageShots.filter(p=>{
+  p.x += p.vx;
+  p.y += p.vy;
+
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    const e = enemies[i];
+
+    if (Math.hypot(p.x - e.x, p.y - e.y) < e.size) {
+
+      // 💥 Explosion
+      explosions.push({
+  x: p.x,
+  y: p.y,
+  r: p.r,
+  life: 20,
+  maxLife: 20
+});
+
+
+
+
+      if(p.blackHole){
+blackHoles.push({
+  x: p.x,
+  y: p.y,
+  r: 80,
+  t: 240,
+  maxT: 240
+});
+
+  }
+
+
+
+      // 🎯 Direkter Treffer
+      e.hp -= 40;
+
+      // 💣 AoE Schaden
+      for (let j = enemies.length - 1; j >= 0; j--) {
+        const en = enemies[j];
+        if (Math.hypot(en.x - p.x, en.y - p.y) < 60) {
+          en.hp -= 55;
+damageTexts.push({
+  x: en.x,
+  y: en.y,
+  value: 55,
+  life: 30,
+  maxLife: 30
+});
+
+
+          if (en.hp <= 0) {
+            GAME.score++;
+
+HEROES.mage.kills++;
+HEROES.mage.level = calcLevel(HEROES.mage.kills);
+
+
+          if(en.type.startsWith("boss")){
+  onBossKilled();
+}
+
+
+            enemies.splice(j, 1);
+          }
+        }
+      }
+
+      // Projektil verbraucht
+      return false;
+    }
+  }
+
+  return true;
+});
+
+  /* --- Sword --- */
+  SWORD.cooldown--;
+  if(SWORD.cooldown<=0 && enemies.length){
+    SWORD.cooldown = SWORD.baseCooldown;
+    SWORD.active = SWORD.maxActive;
+    SWORD.swingDir *= -1;
+    SWORD.hitEnemies.clear();
+ }
+
+  if(SWORD.active>0){
+    SWORD.active--;
+    enemies = enemies.filter(e=>{
+      const dx=e.x-k.x, dy=e.y-k.y;
+      const d=Math.hypot(dx,dy);
+      if(d < SWORD.range){
+        const ea=Math.atan2(dy,dx);
+        const fa=Math.atan2(k.dir.y,k.dir.x);
+        let diff=Math.abs(ea-fa);
+        if(diff>Math.PI) diff=2*Math.PI-diff;
+        if(diff < SWORD.angle/2){
+        if(SWORD.hitEnemies.has(e)) return true;
+        SWORD.hitEnemies.add(e);
+
+          e.hp -= 50;
+          damageTexts.push({
+  x: e.x,
+  y: e.y,
+  value: 50,
+  life: 30,
+  maxLife: 30
+});
+
+          if(k.level>=5){
+            explosions.push({
+  x: e.x,
+  y: e.y,
+  r: 70,
+  life: 20,
+  maxLife: 20
+});
+
+            enemies.forEach(en=>{
+              if(Math.hypot(en.x-e.x,en.y-e.y)<70){
+                en.hp -= 40;
+              }
+            });
+          }
+          if(e.hp<=0){
+            GAME.score++;
+            k.kills++;
+
+            k.level = calcLevel(k.kills);
+
+            if(e.type.startsWith("boss")){
+  onBossKilled();
+}
+
+            return false;
+          }
+        }
+      }
+      return true;
+    });
+  }
+
+ 
+  /* ===================== ENEMIES ===================== */
+enemies.forEach(e => {
+  const dx = k.x - e.x;
+  const dy = k.y - e.y;
+  const d  = Math.hypot(dx, dy) || 1;
+
+  // Bewegung
+  if (e.type.startsWith("boss")) {
+    e.zigzag += 0.05;
+    e.x += (dx / d) * e.speed + Math.cos(e.zigzag) * 3;
+    e.y += (dy / d) * e.speed + Math.sin(e.zigzag) * 3;
+  } else {
+    e.x += (dx / d) * e.speed;
+    e.y += (dy / d) * e.speed;
+  }
+
+  // 🔫 Shooter schießen
+  if(e.type === "shooter"){
+    e.shootCooldown--;
+    if(e.shootCooldown <= 0){
+      const a = Math.atan2(dy, dx);
+
+      enemyBullets.push({
+        x:e.x,
+        y:e.y,
+        vx:Math.cos(a)*2.2,
+        vy:Math.sin(a)*2.2,
+        hit:false,
+        halfDamage:true
+      });
+
+      e.shootCooldown = 120;
+    }
+  }
+
+  // Boss 2 – Doppelschuss
+  if(e.type === "boss2"){
+    e.shootCooldown--;
+    if(e.shootCooldown<=0){
+      const a=Math.atan2(dy,dx);
+      enemyBullets.push(
+        {x:e.x,y:e.y,vx:Math.cos(a+0.6)*3,vy:Math.sin(a+0.6)*3,hit:false},
+        {x:e.x,y:e.y,vx:Math.cos(a-0.6)*3,vy:Math.sin(a-0.6)*3,hit:false}
+      );
+      e.shootCooldown=90;
+    }
+  }
+
+  // Boss 3 – Spirale
+  if(e.type==="boss3"){
+    e.shootCooldown--;
+    if(e.shootCooldown<=0){
+      const base=Math.atan2(dy,dx);
+      e.spiralAngle+=0.35;
+      enemyBullets.push({
+        x:e.x,y:e.y,
+        vx:Math.cos(base+e.spiralAngle)*3,
+        vy:Math.sin(base+e.spiralAngle)*3,
+        hit:false
+      });
+      e.shootCooldown=6;
+    }
+  }
+
+  // Kontakt-Schaden
+  if(d < k.size && GAME.hitCooldown<=0){
+    GAME.hp--;
+    GAME.hitCooldown = HIT_IFRAMES;
+  }
+});
+
+/* ===================== ENEMY BULLETS ===================== */
+enemyBullets = enemyBullets.filter(b => {
+
+  b.x += b.vx;
+  b.y += b.vy;
+
+  // 💥 Reflektierte Projektile treffen Gegner
+if(b.reflected){
+  for(let i = enemies.length - 1; i >= 0; i--){
+    const e = enemies[i];
+
+    if(Math.hypot(b.x - e.x, b.y - e.y) < e.size){
+
+      const dmg = 35 + HEROES.guardian.level * 10;
+
+      e.hp -= dmg;
+
+      damageTexts.push({
+        x: e.x,
+        y: e.y,
+        value: dmg,
+        life: 25,
+        maxLife: 25
+      });
+
+      if(e.hp <= 0){
+        GAME.score++;
+
+        if(e.type.startsWith("boss")){
+          onBossKilled();
+        }
+
+        enemies.splice(i,1);
+      }
+
+      return false; // Projektil verbraucht
+    }
+  }
+}
+
+
+  // ❌ Bildschirm verlassen
+  if (
+    b.x < -10 || b.x > 490 ||
+    b.y < -10 || b.y > 850
+  ) {
+    return false;
+  }
+
+  // 🛡️ Schild-Kollision
+for(let i = shields.length - 1; i >= 0; i--){
+  const s = shields[i];
+  const k = HEROES.knight;
+
+  const hitRadius = s.type === "line" ? 22 : s.r;
+
+  if(Math.hypot(b.x - k.x, b.y - k.y) < hitRadius){
+
+    // 🛡️ BLOCK-XP
+    HEROES.guardian.blocks++;
+    HEROES.guardian.level =
+      calcGuardianLevel(HEROES.guardian.blocks);
+
+    s.blocks--;
+
+    if(s.reflect){
+  b.vx *= -1;
+  b.vy *= -1;
+  b.reflected = true; // ⭐ merkt sich: kommt vom Guardian
+  return true;
+}
+
+
+    if(s.blocks <= 0){
+      shields.splice(i,1);
+    }
+
+    return false; // geblockt
+  }
+}
+
+
+
+
+  // 💥 Treffer auf Ritter
+  if (
+    Math.hypot(b.x - HEROES.knight.x, b.y - HEROES.knight.y) < 8 &&
+    GAME.hitCooldown <= 0
+  ) {
+    GAME.hp--;
+    GAME.hitCooldown = HIT_IFRAMES;
+    return false;
+  }
+
+  return true;
+});
+
+
+
+/* ===================== HP CHECK ===================== */
+if (GAME.hp <= 0) {
+  GAME.hp = 0;
+  GAME.gameOver = true;
+}
+
+}
+
+
+
+/* ===================== DRAW ===================== */
+function draw(){
+  ctx.clearRect(0,0,480,840);
+
+  // 🔒 fester Startzustand
+  ctx.textAlign = "left";
+  ctx.font = "16px Arial";
+
+  // ⛔ Wenn Game Over → nur Game-Over-Screen zeichnen
+  if(GAME.gameOver){
+    ctx.textAlign = "center";
+
+    ctx.fillStyle="rgba(0,0,0,0.6)";
+    ctx.fillRect(0,0,480,840);
+
+    ctx.fillStyle="white";
+    ctx.font="32px Arial";
+    ctx.fillText("GAME OVER",240,420);
+
+    ctx.font="16px Arial";
+    ctx.fillText("KLICK ZUM NEUSTART",240,450);
+
+    ctx.textAlign = "left"; // reset
+    return; // 🔥 WICHTIG
+  }
+
+  // 🟣 Black Holes zeichnen (EIGENE SCHLEIFE)
+blackHoles.forEach(bh => {
+  ctx.strokeStyle = `rgba(120,0,200,${bh.t / bh.maxT})`;
+
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(bh.x, bh.y, bh.r, 0, Math.PI * 2);
+  ctx.stroke();
+});
+
+// 🟠 Explosionen zeichnen (EIGENE SCHLEIFE)
+explosions.forEach(e=>{
+  const p = 1 - e.life / e.maxLife;
+
+  ctx.strokeStyle = `rgba(255,140,0,${1 - p})`;
+
+  ctx.beginPath();
+  ctx.arc(
+    e.x,
+    e.y,
+    e.r * p,
+    0,
+    Math.PI * 2
+  );
+  ctx.stroke();
+});
+
+// 🛡️ Guardian Shield zeichnen
+shields.forEach(s => {
+
+  const k = HEROES.knight;
+
+  ctx.strokeStyle = s.reflect ? "cyan" : "rgba(180,220,255,0.9)";
+  ctx.lineWidth = 4;
+
+  // 🔹 LEVEL 1–2: STRICH vor dem Ritter
+  if(s.type === "line"){
+    const dx = k.dir.x;
+    const dy = k.dir.y;
+
+    ctx.beginPath();
+    ctx.moveTo(
+      k.x + dx * 18 - dy * 10,
+      k.y + dy * 18 + dx * 10
+    );
+    ctx.lineTo(
+      k.x + dx * 18 + dy * 10,
+      k.y + dy * 18 - dx * 10
+    );
+    ctx.stroke();
+  }
+
+  // 🔵 LEVEL 3+: KREIS UM DEN RITTER
+  if(s.type === "circle"){
+    ctx.beginPath();
+    ctx.arc(k.x, k.y, s.r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+});
+
+
+
+
+  if(SWORD.active>0){
+    const p=1-SWORD.active/SWORD.maxActive;
+    const base=Math.atan2(HEROES.knight.dir.y,HEROES.knight.dir.x);
+    const a=base+(p-0.5)*SWORD.angle*SWORD.swingDir;
+    ctx.strokeStyle="white";
+    ctx.lineWidth=3;
+    ctx.beginPath();
+    ctx.moveTo(HEROES.knight.x,HEROES.knight.y);
+    ctx.lineTo(
+      HEROES.knight.x+Math.cos(a)*SWORD.range,
+      HEROES.knight.y+Math.sin(a)*SWORD.range
+    );
+    ctx.stroke();
+  }
+
+  ctx.fillStyle=GAME.hitCooldown>0?"#66f":"blue";
+  ctx.fillRect(HEROES.knight.x-8,HEROES.knight.y-8,16,16);
+
+  if(HEROES.archer.unlocked){
+    ctx.fillStyle="green";
+    ctx.fillRect(HEROES.archer.x-7,HEROES.archer.y-7,14,14);
+  }
+  if(HEROES.mage.unlocked){
+  if(HEROES.guardian.unlocked){
+  ctx.fillStyle = "gold";
+  ctx.fillRect(HEROES.guardian.x-6, HEROES.guardian.y-6, 12, 12);
+}
+
+    ctx.fillStyle="purple";
+    ctx.fillRect(HEROES.mage.x-7,HEROES.mage.y-7,14,14);
+  }
+
+  ctx.fillStyle="white";
+  arrows.forEach(a=>{
+  ctx.fillStyle = a.heavy ? "cyan" : "white";
+  ctx.fillRect(
+    a.x - a.size/2,
+    a.y - a.size/2,
+    a.size,
+    a.size
+  );
+});
+
+  ctx.fillStyle="violet";
+  mageShots.forEach(p=>{
+    ctx.beginPath();
+    ctx.arc(p.x,p.y,4,0,Math.PI*2);
+    ctx.fill();
+  });
+
+  ctx.fillStyle="yellow";
+  enemyBullets.forEach(b=>ctx.fillRect(b.x-2,b.y-2,4,4));
+
+  enemies.forEach(e=>{
+
+   ctx.fillStyle =
+  e.type==="boss1" ? "#884400" :
+  e.type==="boss2" ? "#552200" :
+  e.type==="boss3" ? "#003366" : // 🌀 Spiral-Boss
+  e.type==="tank"  ? "orange" :
+  e.type==="fast"  ? "purple" :
+  "red";
+
+    ctx.fillRect(e.x-e.size/2,e.y-e.size/2,e.size,e.size);
+  });
+// 🔢 Damage-Zahlen zeichnen
+damageTexts.forEach(d => {
+  const alpha = d.life / d.maxLife;
+
+  ctx.fillStyle = `rgba(255,255,0,${alpha})`;
+
+  ctx.font = "14px Arial";
+  ctx.textAlign = "center";
+
+  ctx.fillText(d.value, d.x, d.y);
+});
+
+// 🔁 WICHTIG: Reset nach Damage-Zahlen
+ctx.textAlign = "left";
+ctx.font = "16px Arial";
+    for(let i = 0; i < GAME.maxHp; i++){
+  ctx.fillStyle = i < GAME.hp ? "red" : "#550000";
+  ctx.fillRect(10 + i * 22, 10, 18, 18);
+}
+
+
+  ctx.fillStyle="white";
+  ctx.fillText("Ebene "+GAME.level,20,64);
+ctx.fillText("Knight Lvl "+HEROES.knight.level,20,84);
+
+if(GAME.level >= 2){
+  ctx.fillText("Archer Lvl "+HEROES.archer.level,20,104);
+}
+if(GAME.level >= 3){
+  ctx.fillText("Wizard Lvl " + HEROES.mage.level, 20, 124);
+}
+
+if(GAME.level >= 4){
+  ctx.fillText(
+    "Schildträger Lvl " + HEROES.guardian.level,
+    20,
+    144
+  );
+}
+
+
+
+ctx.fillText("Score "+GAME.score,360,24);
+
+
+  if(GAME.state === "bossPause"){
+  ctx.fillStyle = "rgba(0,0,0,0.6)";
+  ctx.fillRect(0,0,480,840);
+
+  ctx.fillStyle = "white";
+  ctx.font = "32px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText("EBENE GESCHAFFT", 240, 400);
+  ctx.fillText("+1 HP", 240, 500);
+
+  ctx.font = "16px Arial";
+  ctx.fillText("KLICK ZUM WEITERGEHEN", 240, 440);
+
+  ctx.textAlign = "left"; // reset
+}
+
+  
+  }
+
+/* ===================== LOOP ===================== */
+(function loop(){
+  update();
+  draw();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
