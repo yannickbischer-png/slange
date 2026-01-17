@@ -554,7 +554,7 @@ if(!IS_MOBILE){
   if(keys.d){ k.x+=sp; k.dir={x:1,y:0}; }
 }
 
-// 📱 Mobile – Touch Follow
+// 📱 Mobile – feste Laufgeschwindigkeit wie PC
 if(IS_MOBILE && touchPos){
   const rect = canvas.getBoundingClientRect();
 
@@ -562,13 +562,19 @@ if(IS_MOBILE && touchPos){
   const dy = touchPos.y - rect.top  - k.y;
   const dist = Math.hypot(dx, dy);
 
-  if(dist > 3){
-    const speed = 2.6;
-    k.x += dx / dist * speed;
-    k.y += dy / dist * speed;
-    k.dir = { x: dx / dist, y: dy / dist };
+  if(dist > 4){ // kleine Deadzone
+    const speed = sp; // 👈 exakt PC-Geschwindigkeit
+
+    k.x += (dx / dist) * speed;
+    k.y += (dy / dist) * speed;
+
+    k.dir = {
+      x: dx / dist,
+      y: dy / dist
+    };
   }
 }
+
 
 
   k.x = Math.max(8, Math.min(472, k.x));
