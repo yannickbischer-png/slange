@@ -3,7 +3,6 @@
 
 
 
-
 <!DOCTYPE html>
 <html lang="de">
 <head>
@@ -646,35 +645,26 @@ if(HEROES.guardian.unlocked){
   if(shields.length === 0 && HEROES.guardian.cooldown <= 0){
 
     shields.push({
-      type: lvl < 3 ? "line" : "circle",
+  type: lvl < 3 ? "line" : "circle",
 
-      r:
-        lvl < 3 ? 0 :
-        lvl === 3 ? 22 :
-        lvl === 4 ? 30 : 36,
+  r:
+    lvl < 3 ? 0 :
+    lvl === 3 ? 22 :
+    lvl === 4 ? 30 : 36,
 
-      blocks:
-        lvl >= 4 ? 2 : 1,
+  // 🛡️ Wie viele Projektile das Schild aushält
+  blocks:
+    lvl >= 4 ? 2 : 1,
 
-      reflect: lvl >= 5,
-
-      life:
-        lvl === 1 ? 90 :
-        lvl === 2 ? 110 :
-        lvl === 3 ? 140 :
-        lvl === 4 ? 300 : 200
-    });
+  reflect: lvl >= 5
+});
 
     // ⏱️ Cooldown startet ERST NACH Spawn
     HEROES.guardian.cooldown = cooldown;
   }
 }
 
-// 🛡️ SHIELD-LIFE UPDATE (GANZ WICHTIG)
-shields = shields.filter(s => {
-  s.life--;
-  return s.life > 0;
-});
+
 
 
 
@@ -1098,19 +1088,22 @@ for(let i = shields.length - 1; i >= 0; i--){
 
     s.blocks--;
 
-    if(s.reflect){
-  b.vx *= -1;
-  b.vy *= -1;
-  b.reflected = true; // ⭐ merkt sich: kommt vom Guardian
-  return true;
+// 🛡️ Schild zerstören, wenn keine Blocks mehr übrig
+if(s.blocks <= 0){
+  shields.splice(i,1);
 }
 
+// 🔁 Reflektion (Level 5)
+if(s.reflect){
+  b.vx *= -1;
+  b.vy *= -1;
+  b.reflected = true;
+  return true; // Projektil fliegt weiter
+}
 
-    if(s.blocks <= 0){
-      shields.splice(i,1);
-    }
+// ❌ normales Blocken
+return false;
 
-    return false; // geblockt
   }
 }
 
