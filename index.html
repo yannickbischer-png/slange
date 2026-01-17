@@ -75,6 +75,21 @@ addEventListener("keyup", e=> keys[e.key.toLowerCase()] = false);
 /* ===================== TOUCH EVENTS (MOBILE) ===================== */
 canvas.addEventListener("touchstart", e=>{
   e.preventDefault();
+
+  // 🔁 GAME OVER → Neustart
+  if(GAME.gameOver){
+    restartGame();
+    return;
+  }
+
+  // ▶️ Boss-Pause → nächstes Level
+  if(GAME.state === "bossPause"){
+    GAME.state = "play";
+    nextLevel();
+    return;
+  }
+
+  // 🎮 Normale Touch-Steuerung
   const t = e.touches[0];
   const rect = canvas.getBoundingClientRect();
 
@@ -83,6 +98,7 @@ canvas.addEventListener("touchstart", e=>{
     y: t.clientY - rect.top
   };
 });
+
 
 canvas.addEventListener("touchmove", e=>{
   e.preventDefault();
@@ -334,25 +350,10 @@ function nextLevel(){
   }
 }
 
-
-function handleConfirm(){
-  if(GAME.state === "bossPause"){
-    GAME.state = "play";
-    nextLevel();
-  } 
-  else if(GAME.gameOver){
-    restartGame();
-  }
-}
-
-// 🖥️ PC
-canvas.addEventListener("click", handleConfirm);
-
-// 📱 Mobile
-canvas.addEventListener("touchstart", e=>{
-  e.preventDefault();
-  handleConfirm();
+canvas.addEventListener("touchend", ()=>{
+  touchPos = null;
 });
+
 
 
 function restartGame(){
