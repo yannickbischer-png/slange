@@ -576,32 +576,8 @@ if(IS_MOBILE && touchPos){
 }
 
 
-
   k.x = Math.max(8, Math.min(472, k.x));
   k.y = Math.max(8, Math.min(832, k.y));
-
-/* --- Touch Follow Steuerung (Mobile) --- */
-if(touchPos){
-  const rect = canvas.getBoundingClientRect();
-
-  const tx = touchPos.x - rect.left;
-  const ty = touchPos.y - rect.top;
-
-  const dx = tx - k.x;
-  const dy = ty - k.y;
-  const dist = Math.hypot(dx, dy);
-
-  if(dist > 2){
-    const speed = 2.5; // Gefühl einstellen
-    k.x += dx / dist * speed;
-    k.y += dy / dist * speed;
-
-    k.dir = {
-      x: dx / dist,
-      y: dy / dist
-    };
-  }
-}
 
 
   /* --- Spawning --- */
@@ -1382,5 +1358,3 @@ ctx.fillText("Score "+GAME.score,360,24);
 </script>
 </body>
 </html>
-
-
