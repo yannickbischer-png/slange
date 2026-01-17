@@ -3,6 +3,7 @@
 
 
 
+
 <!DOCTYPE html>
 <html lang="de">
 <head>
@@ -1139,9 +1140,14 @@ if (GAME.hp <= 0) {
 function draw(){
   ctx.clearRect(0,0,480,840);
 
-  // 🔒 fester Startzustand
-  ctx.textAlign = "left";
-  ctx.font = "16px Arial";
+  // 🔒 fester Startzustand (PC vs Mobile)
+ctx.textAlign = "left";
+
+if(IS_MOBILE){
+  ctx.font = "13px Arial";   // 📱 kleiner
+}else{
+  ctx.font = "16px Arial";   // 🖥️ wie vorher
+}
 
   // ⛔ Wenn Game Over → nur Game-Over-Screen zeichnen
   if(GAME.gameOver){
@@ -1304,15 +1310,30 @@ damageTexts.forEach(d => {
 // 🔁 WICHTIG: Reset nach Damage-Zahlen
 ctx.textAlign = "left";
 ctx.font = "16px Arial";
-    for(let i = 0; i < GAME.maxHp; i++){
+    const hudPadding = IS_MOBILE ? 6 : 10;
+const hpSize     = IS_MOBILE ? 14 : 18;
+const hpGap      = IS_MOBILE ? 18 : 22;
+
+for(let i = 0; i < GAME.maxHp; i++){
   ctx.fillStyle = i < GAME.hp ? "red" : "#550000";
-  ctx.fillRect(10 + i * 22, 10, 18, 18);
+  ctx.fillRect(
+    hudPadding + i * hpGap,
+    hudPadding,
+    hpSize,
+    hpSize
+  );
 }
 
 
+
   ctx.fillStyle="white";
-  ctx.fillText("Ebene "+GAME.level,20,64);
-ctx.fillText("Knight Lvl "+HEROES.knight.level,20,84);
+  const textX = IS_MOBILE ? 10 : 20;
+const baseY = IS_MOBILE ? 52 : 64;
+const lineH = IS_MOBILE ? 18 : 20;
+
+ctx.fillText("Ebene "+GAME.level, textX, baseY);
+ctx.fillText("Knight Lvl "+HEROES.knight.level, textX, baseY + lineH);
+
 
 if(GAME.level >= 2){
   ctx.fillText("Archer Lvl "+HEROES.archer.level,20,104);
